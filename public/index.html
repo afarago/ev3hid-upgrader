@@ -2,15 +2,19 @@
 <html>
   <head>
     <title>EV3 HID test</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
 
   <body>
     <p>EV3 HID test over WebHID</p>
     <script type="module" src="/src/main.ts"></script>
-    <button id="connect">Connect</button>
-    <button id="getversion">Get HW version</button>
-    <button id="updatefw">Update</button>
-    <button id="disconnect">Disconnect</button>
+    <div>
+      <button id="connect">Connect</button>
+      <button id="getversion">Get HW version</button>
+      <button id="updatefw">Update</button>
+      <button id="disconnect">Disconnect</button>
+      message count: <span id="message-count">0</span>
+    </div>
     <pre id="log"></pre>
   </body>
 </html>

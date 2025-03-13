@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { fileURLToPath } from "url";
 import https from "vite-plugin-https";
+// import { nodePolyfills } from "vite-plugin-node-polyfills";
 import path from "path";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,5 +18,10 @@ export default defineConfig({
     // },
     port: 5178,
   },
-  plugins: [https()],
+  plugins: [
+    https(),
+    // nodePolyfills({
+    //   protocolImports: true,
+    // }),
+  ],
 });

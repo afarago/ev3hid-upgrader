@@ -1,14 +1,15 @@
-// main.ts
-
 import {
   HIDDeviceFilter,
   closeHIDDevice,
   connectHIDDevice,
   requestHIDDevice,
 } from "./web-hid";
+import { log, updateMsgCount } from "./util";
 
 import axios from "axios";
-import { log } from "./util";
+import { mycrc32 } from "./crc32";
+
+// import crc32 from "buffer-crc32"; // Import the default export
 
 enum MessageType {
   SYSTEM_COMMAND_REPLY = 0x01,
@@ -101,7 +102,7 @@ class DeviceCommunicator {
     const messageNumber = this.nextMsgCount();
 
     // const messageBuffer = new ArrayBuffer(length + 3 + (payload?.length ?? 0));
-    const messageBuffer = new ArrayBuffer(length + 2 + (payload?.length ?? 0));
+    const messageBuffer = new ArrayBuffer(length + 2);
     const messageView = new DataView(messageBuffer);
 
     // messageView.setUint16(0, 0, true); // length
@@ -121,7 +122,7 @@ class DeviceCommunicator {
       }
     }
     log(
-      `Sending message command<${Command[command]}> length<${length}> messageNumber<${messageNumber}>`
+      `Sending message command<${Command[command]}> length<${length}> messageNumber<${messageNumber}> payloadlength<${payload?.length}>`
     );
     log(
       Array.from(new Uint8Array(messageBuffer))
@@ -131,9 +132,12 @@ class DeviceCommunicator {
       messageBuffer.byteLength > 30 ? "..." : ""
     );
 
+    const replypromise = waitForInputReport(this.device);
+    updateMsgCount(this.msgCount, false);
+    await this.device.sendReport(this.reportId, messageBuffer);
+    updateMsgCount(this.msgCount, true);
+
     if (waitForReply) {
-      const replypromise = waitForInputReport(this.device);
-      await this.device.sendReport(this.reportId, messageBuffer);
       const reply = await replypromise.then((event) => {
         return new Uint8Array(event.data.buffer);
       });
@@ -346,16 +350,28 @@ async function updatefw() {
     return;
   }
 
-  console.log("Getting version...");
+  log("Getting version...");
   // const fname = "./firmware/LME-EV3_Firmware_1.10E.bin";
   const fname = "./firmware/firmware-base.bin";
   const response = await axios.get(fname, {
     responseType: "arraybuffer",
   });
-  console.log(`Firmware size: ${response.data.byteLength} bytes`);
+  log(`Firmware size: ${response.data.byteLength} bytes`);
 
   const firmwareSize = response.data.byteLength;
   const firmwareData = new Uint8Array(response.data);
+  const expected_checksum = mycrc32(firmwareData);
+  log(`Checksum: ${expected_checksum}`);
+
+  // let x = mycrc32(firmwareData);
+  // // convert to unsigned int
+  // if (x < 0) x = x + 0x100000000;
+  // log(`Checksum: ${x}`);
+  // // Checksum: 1276155392
+  // Checksum mismatch: 3326873750 (96104CC6) 1276155392 (4C109600)
+  // 00 96 10 c6 // 3322975744 (real)
+  // return;
+
   // const view = new DataView(firmwareData.buffer);
   log(
     `download and erase firmware... ${firmwareSize} bytes (${firmwareSize.toString(
@@ -417,50 +433,54 @@ async function updatefw() {
   }
 
   // bootloader.get_checksum(0, len(firmware))
+  {
+    // payload = struct.pack("<II", address, size);
+    // num = self._send_command(Command.GET_CHECKSUM, payload);
+    // payload = self._receive_reply(Command.GET_CHECKSUM, num);
+    // return struct.unpack("<I", payload)[0];
 
-  // const inputReportCallback = (event: HIDInputReportEvent) => {
-  //   console.log("Received input report:", event.reportId, event.data);
-  // };
+    const param_data = new Uint8Array(8);
+    const view = new DataView(param_data.buffer);
+    // Gets the checksum of a memory range.
+    view.setUint32(0, 0, true); // address
+    view.setUint32(4, firmwareSize, true);
+    let checksum = 0;
+    try {
+      const reply = await communicator?.sendCommand(
+        Command.RECOVERY_GET_CHECKSUM,
+        param_data
+      );
+      if (!reply) throw new Error("No reply received");
+      checksum = new DataView(reply.buffer).getUint32(6, true);
+      log("Checksum:", checksum);
+    } catch (error) {
+      log("Error communicating with device:", "Command.GET_CHECKSUM", error);
+    }
 
-  // addHIDInputReportListener(device, inputReportCallback);
+    // expected_checksum = zlib.crc32(firmware);
 
-  // const outputData = new Uint8Array([0x01, 0x02, 0x03]);
-  // await sendHIDOutputReport(device, 0x01, outputData);
-  // const command = Command.GET_VERSION;
+    if (expected_checksum !== checksum) {
+      log("Checksum mismatch:", expected_checksum, checksum);
+    }
 
-  // // num = self._send_command(Command.GET_VERSION);
-  // let length = 4;
-  // // length += len(payload);
+    log("Checksum OK");
+    log("Restarting EV3...");
+  }
 
-  // // message_number = next(self._msg_count);
-  // const message_number = 1;
-
-  // try {
-  //   const message = new DataView(new ArrayBuffer(8));
-  //   message.setUint16(0, length, true);
-  //   message.setUint16(2, message_number, true);
-  //   message.setUint8(4, MessageType.SYSTEM_COMMAND_REPLY);
-  //   message.setUint8(5, command);
-  //   await device.sendReport(0, message.buffer);
-
-  //   // payload = self._receive_reply(
-  //   //   Command.GET_VERSION,
-  //   //   num,
-  //   //   (force_length = 13)
-  //   // );
-  //   // return struct.unpack("<II", payload);
-  //   const buf = await device.receiveFeatureReport(0);
-  //   console.log(buf);
-  //   // reply = bytes(self._device.read(255));
-
-  //   // setTimeout(async () => {
-  //   //   //removeHIDInputReportListener(device, inputReportCallback);
-  //   //   await closeHIDDevice(device);
-  //   //   console.log("HID device closed.");
-  //   // }, 5000);
-  // } catch (error) {
-  //   console.error("Error sending HID output report:", error);
-  // }
+  {
+    // num = self._send_command(Command.START_APP);
+    // self._receive_reply(Command.START_APP, num);
+    try {
+      const reply = await communicator?.sendCommand(Command.RECOVERY_START_APP);
+      if (!reply) throw new Error("No reply received");
+    } catch (error) {
+      log(
+        "Error communicating with device:",
+        "Command.RECOVERY_START_APP",
+        error
+      );
+    }
+  }
 }
 
 document.getElementById("connect")?.addEventListener("click", connect);
