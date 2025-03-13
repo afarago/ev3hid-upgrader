@@ -12,6 +12,7 @@
   "dependencies": {
     "@types/w3c-web-hid": "^1.0.6",
     "@vitejs/plugin-react": "^4.3.4",
+    "axios": "^1.8.3",
     "vite": "^6.2.0"
   },
   "scripts": {
