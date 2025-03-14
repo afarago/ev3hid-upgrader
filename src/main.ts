@@ -4,7 +4,7 @@ import {
   connectHIDDevice,
   requestHIDDevice,
 } from "./web-hid";
-import { log, updateMsgCount } from "./util";
+import { hex16, log, updateMsgCount } from "./util";
 
 import axios from "axios";
 import { mycrc32 } from "./crc32";
@@ -34,7 +34,25 @@ enum ReplyStatusCode {
   ILLEGAL_CONNECTION = 0x0c,
 }
 
-enum Command {
+enum SystemCommand {
+  BEGIN_DOWNLOAD = 0x92,
+  CONTINUE_DOWNLOAD = 0x93,
+  BEGIN_UPLOAD = 0x94,
+  CONTINUE_UPLOAD = 0x95,
+  BEGIN_GETFILE = 0x96,
+  CONTINUE_GETFILE = 0x97,
+  CLOSE_FILEHANDLE = 0x98,
+  LIST_FILES = 0x99,
+  CONTINUE_LIST_FILES = 0x9a,
+  CREATE_DIR = 0x9b,
+  DELETE_FILE = 0x9c,
+  LIST_OPEN_HANDLES = 0x9d,
+  WRITE_MAILBOX = 0x9e,
+  BLUETOOTH_PIN = 0x9f,
+  ENTER_FW_UPDATE = 0xa0,
+  SET_BUNDLE_ID = 0xa1,
+  SET_BUNDLE_SEED_ID = 0xa2,
+
   RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE = 0xf0,
   RECOVERY_BEGIN_DOWNLOAD = 0xf1,
   RECOVERY_DOWNLOAD_DATA = 0xf2,
@@ -85,7 +103,7 @@ class DeviceCommunicator {
   }
 
   async sendCommand(
-    command: Command,
+    command: SystemCommand,
     payload?: Uint8Array,
     waitForReply: boolean = true
   ): Promise<Uint8Array | undefined> {
@@ -122,7 +140,7 @@ class DeviceCommunicator {
       }
     }
     log(
-      `Sending message command<${Command[command]}> length<${length}> messageNumber<${messageNumber}> payloadlength<${payload?.length}>`
+      `Sending message command<${SystemCommand[command]}> length<${length}> messageNumber<${messageNumber}> payloadlength<${payload?.length}>`
     );
     log(
       Array.from(new Uint8Array(messageBuffer))
@@ -132,12 +150,12 @@ class DeviceCommunicator {
       messageBuffer.byteLength > 30 ? "..." : ""
     );
 
-    const replypromise = waitForInputReport(this.device);
+    const replypromise = waitForReply ? waitForInputReport(this.device) : null;
     updateMsgCount(this.msgCount, false);
     await this.device.sendReport(this.reportId, messageBuffer);
     updateMsgCount(this.msgCount, true);
 
-    if (waitForReply) {
+    if (waitForReply && replypromise) {
       const reply = await replypromise.then((event) => {
         return new Uint8Array(event.data.buffer);
       });
@@ -153,7 +171,7 @@ class DeviceCommunicator {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join(" ");
       log(
-        `Received status<${ReplyStatusCode[statusCode]}> for command<${Command[replyCommand]}> length<${replysize}> messageNumber<${replyNumber}>`
+        `Received status<${ReplyStatusCode[statusCode]}> for command<${SystemCommand[replyCommand]}> length<${replysize}> messageNumber<${replyNumber}>`
       );
       log(replyhex);
 
@@ -209,62 +227,6 @@ class DeviceCommunicator {
   //   }
 }
 
-// Example usage:
-async function communicateWithDevice(device: HIDDevice) {
-  const communicator = new DeviceCommunicator(device);
-  // const payload = new Uint8Array([0x01, 0x02, 0x03]); // Example payload
-  const payload = undefined;
-  const messageNumber = await communicator.sendCommand(
-    Command.RECOVERY_GET_VERSION,
-    payload
-  );
-
-  // wait for inputreport event to return some data
-
-  // # On certain USB 3.0 systems, the brick reply contains the command
-  // # we just sent written over it. This means we don't get the correct
-  // # header and length info. Since the command here is smaller than the
-  // # reply, the paypload does not get overwritten, so we can still get
-  // # the version info since we know the expected reply size.
-  // payload = self._receive_reply(Command.GET_VERSION, num, force_length=13)
-  // return struct.unpack("<II", payload)
-  // https://docs.python.org/3/library/struct.html
-  // Note The number 1023 (0x3ff in hexadecimal) has the following byte representations:
-  // 03 ff in big-endian (>)
-  // ff 03 in little-endian (<)
-  // I, unsigned int, integer, 4
-  // H, unsigned short, integer, 2
-
-  //  length,
-  //    reply_number,
-  //    message_type, // SYSTEM_COMMAND_REPLY = 0x01, SYSTEM_COMMAND_NO_REPLY = 0x81, SYSTEM_REPLY = 0x03, SYSTEM_REPLY_ERROR = 0x05
-  //    reply_command, // reply_command = command
-  //    status
-  // = struct.unpack_from("<HHBBB", reply));
-
-  // 00 00 00 01 F6 --> 00 05 00 01 F6 05 00 02 00 (05 00 02 00) --> 5.2
-  // 00 00 00 00 00 01 F6 --> 00 0D 00 00 00 03 F6 00 06 00 00 00 06 00
-  // 00 00 00 00 00 01 F6 --> 00 0D 00 00 00 03 F6 00 06 00 00 00 06 00
-
-  // 00 0D 00 00 00 03 F6 00 06 00 00 00 06 00
-  //    lengt repnu mt rc st fw___ hw___
-  //    mt = message_type (01 or 03 / bad 05)
-  //    rc = reply_command
-  //    st = status
-  //    fw, hw (version) = struct.unpack("<II", payload), print hw = 6
-
-  // 01 F6 .. 00 06 .. ..
-  // try {
-  //   const reply = await communicator.receiveReply(
-  //     Command.GET_VERSION,
-  //     messageNumber
-  //   );
-  //   log("Received reply:", reply);
-  // } catch (error) {
-  //   log("Error receiving reply:", error);
-  // }
-}
-
 let device: HIDDevice | null = null;
 let communicator: DeviceCommunicator | null;
 
@@ -292,23 +254,19 @@ async function connect() {
   log("Requesting HID device...");
 
   const LEGO_USB_VID = 0x0694;
-  // const EV3_USB_PID = 0x0005;
+  const EV3_USB_PID = 0x0005;
   const EV3_BOOTLOADER_USB_PID = 0x0006;
   const filters: HIDDeviceFilter[] = [
-    { vendorId: LEGO_USB_VID, productId: EV3_BOOTLOADER_USB_PID }, // EV3 Firmware Update
+    //{ vendorId: LEGO_USB_VID, productId: EV3_BOOTLOADER_USB_PID }, // EV3 Firmware Update
+    // { vendorId: LEGO_USB_VID, productId: EV3_USB_PID },
+    { vendorId: LEGO_USB_VID },
   ];
 
   device = await requestHIDDevice({ filters });
 
   if (device) {
     log("HID device found:", device);
-    communicator = new DeviceCommunicator(device);
-
-    if (await connectHIDDevice(device)) {
-      log("HID device connected.");
-    } else {
-      log("Failed to connect to HID device.");
-    }
+    addDevice(device);
   } else {
     log("No matching HID device found.");
   }
@@ -327,7 +285,9 @@ async function getversion() {
   try {
     // await communicateWithDevice(device);
 
-    const reply = await communicator?.sendCommand(Command.RECOVERY_GET_VERSION);
+    const reply = await communicator?.sendCommand(
+      SystemCommand.RECOVERY_GET_VERSION
+    );
     if (!reply) throw new Error("No reply received");
 
     // byte 6-7 contains hw id in big endian
@@ -390,7 +350,7 @@ async function updatefw() {
     try {
       // await communicateWithDevice(device);
       const reply = await communicator?.sendCommand(
-        Command.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
+        SystemCommand.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
         param_data
       );
       if (!reply) throw new Error("No reply received");
@@ -418,7 +378,7 @@ async function updatefw() {
       // debugger;
       try {
         const reply = await communicator?.sendCommand(
-          Command.RECOVERY_DOWNLOAD_DATA,
+          SystemCommand.RECOVERY_DOWNLOAD_DATA,
           chunk
         );
         // self._receive_reply(Command.DOWNLOAD_DATA, num)
@@ -447,7 +407,7 @@ async function updatefw() {
     let checksum = 0;
     try {
       const reply = await communicator?.sendCommand(
-        Command.RECOVERY_GET_CHECKSUM,
+        SystemCommand.RECOVERY_GET_CHECKSUM,
         param_data
       );
       if (!reply) throw new Error("No reply received");
@@ -471,7 +431,9 @@ async function updatefw() {
     // num = self._send_command(Command.START_APP);
     // self._receive_reply(Command.START_APP, num);
     try {
-      const reply = await communicator?.sendCommand(Command.RECOVERY_START_APP);
+      const reply = await communicator?.sendCommand(
+        SystemCommand.RECOVERY_START_APP
+      );
       if (!reply) throw new Error("No reply received");
     } catch (error) {
       log(
@@ -483,10 +445,42 @@ async function updatefw() {
   }
 }
 
+async function enterfwupdate() {
+  try {
+    // await communicateWithDevice(device);
+    const reply = await communicator?.sendCommand(
+      SystemCommand.ENTER_FW_UPDATE
+    );
+    if (!reply) throw new Error("No reply received");
+  } catch (error) {
+    log("Error communicating with device:", "Command.ENTER_FW_UPDATE", error);
+  }
+}
+
+async function addDevice(device: HIDDevice) {
+  if (await connectHIDDevice(device)) {
+    log("HID device connected.");
+  } else {
+    log("Failed to connect to HID device.");
+  }
+
+  communicator = new DeviceCommunicator(device);
+
+  let deviceInfo =
+    `productName: ${device.productName}\n` +
+    `vendorId:    0x${hex16(device.vendorId)} (${device.vendorId})\n` +
+    `productId:   0x${hex16(device.productId)} (${device.productId})\n` +
+    `opened:      ${device.opened ? "true" : "false"}\n`;
+  log("Device connected:", deviceInfo);
+}
+
 document.getElementById("connect")?.addEventListener("click", connect);
 document.getElementById("getversion")?.addEventListener("click", getversion);
 document.getElementById("updatefw")?.addEventListener("click", updatefw);
 document.getElementById("disconnect")?.addEventListener("click", disconnect);
+document
+  .getElementById("enterfwupdate")
+  ?.addEventListener("click", enterfwupdate);
 
 window.onload = async () => {
   // Register for connection and disconnection events.
@@ -502,8 +496,7 @@ window.onload = async () => {
   if (devices.length > 0) {
     log("Auto connect to first device found...");
     device = devices[0];
-    await connectHIDDevice(device);
-    communicator = new DeviceCommunicator(device);
+    await addDevice(device);
   }
   // for (let device of devices) await addDevice(device);
 };
