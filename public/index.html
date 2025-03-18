@@ -1,24 +1,28 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>EV3 HID test</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
 
-  <body>
-    <h1>EV3 HID test over WebHID</h1>
-    <script type="module" src="/src/main.ts"></script>
-    <div>
-      in EV3 FW update mode:
-      <button id="connect">Connect</button>
-      <button id="getversion">Get HW version</button>
-      <button id="updatefw">Update</button>
-      <button id="disconnect">Disconnect</button>
-      | in EV3 regular mode:
-      <button id="enterfwupdate">Enter FW Update</button>
-      | message count: <span id="message-count">0</span>
-      | debug: chrome://device-log/?refresh=1&types=HID
-    </div>
-    <pre id="log"></pre>
-  </body>
+<head>
+  <title>EV3 HID test</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+
+<body>
+  <h1>EV3 HID test over WebHID</h1>
+  <script type="module" src="/src/main.ts"></script>
+  <div>
+    in EV3 FW update mode:
+    <button id="connect">Connect</button>
+    <button id="getversion">Get HW version</button>
+    <button id="updatefw">Update</button>
+    <button id="disconnect">Disconnect</button>
+  </div>
+  <div>in EV3 regular mode:
+    <button id="enterfwupdate">Enter FW Update</button>
+  </div>
+  <div>message count: <span id="message-count">0</span></div>
+  <div><i>debug: chrome://device-log/?refresh=1&types=HID</i></div>
+  </div>
+  <pre id="log"></pre>
+</body>
+
 </html>

@@ -10,7 +10,7 @@ export function log(...args: any[]) {
 
 const msgcount = document.getElementById("message-count");
 export function updateMsgCount(count: number, status: boolean) {
-  msgcount!.innerText = `${count}${status ? "-" : "+"}`;
+  msgcount!.innerText = `${count}${status ? "+" : "-"}`;
 }
 
 // Formats an 8-bit integer |value| in hexadecimal with leading zeros.
