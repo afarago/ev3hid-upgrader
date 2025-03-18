@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig({
-  rroot: path.resolve(__dirname, 'src'),
+  root: path.resolve(__dirname, '.'),
   server: {
     hot: true,
     https: true,
@@ -24,4 +24,7 @@ export default defineConfig({
     //   protocolImports: true,
     // }),
   ],
+  build: {
+    outDir: './dist',
+  },
 });

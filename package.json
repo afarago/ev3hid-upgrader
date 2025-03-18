@@ -1,7 +1,8 @@
 {
-  "name": "hidtest1",
+  "name": "ev3hid-upgrader-ui",
   "version": "1.0.0",
-  "main": "index.html",
+  "type": "module",
+  "module": "main.ts",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.13.9",

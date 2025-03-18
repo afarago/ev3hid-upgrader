@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
   <title>EV3 HID test</title>
@@ -8,13 +8,13 @@
 
 <body>
   <h1>EV3 HID test over WebHID</h1>
-  <script type="module" src="/src/main.ts"></script>
   <div>
     in EV3 FW update mode:
     <button id="connect">Connect</button>
     <button id="getversion">Get HW version</button>
     <button id="updatefw">Update</button>
     <button id="disconnect">Disconnect</button>
+    <button id="forget">Forget</button>
   </div>
   <div>in EV3 regular mode:
     <button id="enterfwupdate">Enter FW Update</button>
@@ -23,6 +23,7 @@
   <div><i>debug: chrome://device-log/?refresh=1&types=HID</i></div>
   </div>
   <pre id="log"></pre>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 
 </html>

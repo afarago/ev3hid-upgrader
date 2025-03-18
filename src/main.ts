@@ -5,13 +5,13 @@ import { hex16, log, updateMsgCount } from "./util";
 
 let upgrader: WebHidEV3Upgrader | null;
 
-async function disconnect() {
+async function handleDisconnect() {
   log("Disconnecting HID device...");
   upgrader?.close();
   upgrader = null;
 }
 
-async function connect() {
+async function handleConnect() {
   const LEGO_USB_VID = 0x0694;
   const EV3_USB_PID = 0x0005;
   const EV3_BOOTLOADER_USB_PID = 0x0006;
@@ -93,10 +93,17 @@ async function handleEnterFirmwareMode() {
   await upgrader?.enterFirmwareUpdateMode();
 }
 
-document.getElementById("connect")?.addEventListener("click", connect);
+async function handleForget() {
+  await upgrader?.device.close();
+  await upgrader?.device.forget();
+  upgrader = null;
+}
+
+document.getElementById("connect")?.addEventListener("click", handleConnect);
 document.getElementById("getversion")?.addEventListener("click", handleGetVersion);
 document.getElementById("updatefw")?.addEventListener("click", handleUpdateFirmware);
-document.getElementById("disconnect")?.addEventListener("click", disconnect);
+document.getElementById("disconnect")?.addEventListener("click", handleDisconnect);
+document.getElementById("forget")?.addEventListener("click", handleForget);
 document.getElementById("enterfwupdate")?.addEventListener("click", handleEnterFirmwareMode);
 
 window.onload = async () => {
