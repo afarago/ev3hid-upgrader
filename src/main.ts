@@ -19,6 +19,8 @@ async function handleConnect() {
         //{ vendorId: LEGO_USB_VID, productId: EV3_BOOTLOADER_USB_PID }, // EV3 Firmware Update
         // { vendorId: LEGO_USB_VID, productId: EV3_USB_PID },
         { vendorId: LEGO_USB_VID },
+        // { vendorId: 0x0e6f }, // Pybricks
+        // { vendorId: 0x1cbe }, // Pybricks
     ];
 
     let device: HIDDevice | null = null;
@@ -65,24 +67,38 @@ async function open(device: HIDDevice) {
     log('Device connected:', deviceInfo);
 }
 
-async function handleUpdateFirmware() {
+let prev: number | undefined = undefined;
+async function handleUpdateFirmware(filename: string) {
     if (!upgrader) return;
 
-    const filename = 'firmware/firmware-base.bin';
-    // const filename = "firmware/LME-EV3_Firmware_1.10E.bin"
+    // const filename = 'firmware/firmware/firmware-base.bin';
+    // const filename = 'firmware/LME-EV3_Firmware_1.10E.bin';
     const response = await axios.get(filename, {
         responseType: 'arraybuffer',
     });
     const firmware = response.data;
-    const process = upgrader?.write(firmware);
+    const process = upgrader?.write(firmware, true);
 
+    const time = new Date().getTime();
     process?.events.on('start', () => log('Firmware update started'));
     process?.events.on('error', (error) => log('ERROR', error));
-    process?.events.on('end', () => log('Firmware update complete'));
+    process?.events.on('end', () => {
+        const time2 = new Date().getTime();
+        log(time2 - time, 'Firmware update complete');
+    });
 
-    process?.events.on('progress', (state, bytesSent, expectedSize) =>
-        log(state, expectedSize ? `${bytesSent}/${expectedSize}` : ''),
-    );
+    process?.events.on('progress', (state, bytesSent, expectedSize) => {
+        const time2 = new Date().getTime();
+        const elapsed2 = prev ? time2 - prev : 0;
+        prev = time2;
+
+        log(
+            time2 - time,
+            state,
+            expectedSize ? `${bytesSent}/${expectedSize}` : '',
+            elapsed2,
+        );
+    });
 }
 
 async function handleGetVersion() {
@@ -102,11 +118,25 @@ async function handleForget() {
     upgrader = null;
 }
 
+async function handleErase() {
+    await upgrader?.eraseChip();
+}
+
 document.getElementById('connect')?.addEventListener('click', handleConnect);
 document.getElementById('getversion')?.addEventListener('click', handleGetVersion);
-document.getElementById('updatefw')?.addEventListener('click', handleUpdateFirmware);
+document
+    .getElementById('updatefw-pybricks')
+    ?.addEventListener('click', () =>
+        handleUpdateFirmware('firmware/firmware/firmware-base.bin'),
+    );
+document
+    .getElementById('updatefw-ev3g')
+    ?.addEventListener('click', () =>
+        handleUpdateFirmware('firmware/LME-EV3_Firmware_1.10E.bin'),
+    );
 document.getElementById('disconnect')?.addEventListener('click', handleDisconnect);
 document.getElementById('forget')?.addEventListener('click', handleForget);
+document.getElementById('erase')?.addEventListener('click', handleErase);
 document
     .getElementById('enterfwupdate')
     ?.addEventListener('click', handleEnterFirmwareMode);

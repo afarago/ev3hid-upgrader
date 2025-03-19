@@ -1,6 +1,7 @@
 import { createNanoEvents } from 'nanoevents';
 import {
     MessageType,
+    ReplyStatusCode,
     SystemCommand,
     WebHidEV3UpgradeError,
     WebHidEV3UpgradeEvent,
@@ -85,20 +86,24 @@ export class WebHidEV3Upgrader {
             const reply = await replypromise.then((event) => {
                 return new Uint8Array(event.data.buffer);
             });
-            const replysize = new DataView(reply.buffer).getUint16(0, true);
-            // const replyNumber = new DataView(reply.buffer).getUint16(2, true);
+            // const replysize = new DataView(reply.buffer).getUint16(0, true);
+            const replyNumber = new DataView(reply.buffer).getUint16(2, true);
             // const messageType = new DataView(reply.buffer).getUint8(4);
             // const replyCommand = new DataView(reply.buffer).getUint8(5);
-            // const statusCode = new DataView(reply.buffer).getUint8(6);
+            const statusCode = new DataView(reply.buffer).getUint8(6);
             // const replyhex = Array.from(reply)
             //     .slice(0, replysize + 2)
             //     .map((b) => b.toString(16).padStart(2, "0"))
             //     .join(" ");
 
             const replyCmd = reply[5];
-            if (replyCmd !== command) {
+            if (
+                replyCmd !== command ||
+                replyNumber !== messageNumber
+                // statusCode !== ReplyStatusCode.SUCCESS
+            ) {
                 throw new WebHidEV3UpgradeError(
-                    `command mismatch: ${replyCmd} != ${command}`,
+                    `reply mismatch: command:${replyCmd}/${command}, reply:${replyNumber}/${messageNumber}, status:${ReplyStatusCode[statusCode]}`,
                 );
             }
 
@@ -131,7 +136,7 @@ export class WebHidEV3Upgrader {
         return hw;
     }
 
-    write(data: ArrayBuffer): WebHidEV3UpgradeProcessWrite {
+    write(data: ArrayBuffer, singleMode: boolean): WebHidEV3UpgradeProcessWrite {
         if (!this) {
             throw new WebHidEV3UpgradeError('Required initialized driver');
         }
@@ -144,7 +149,7 @@ export class WebHidEV3Upgrader {
 
                 process.events.emit('start');
 
-                result = this.do_write(process, MAX_DATA_SIZE, data);
+                result = this.do_write(process, MAX_DATA_SIZE, data, singleMode);
 
                 result
                     .then(() => process.events.emit('end'))
@@ -157,39 +162,117 @@ export class WebHidEV3Upgrader {
         return process;
     }
 
+    private async processChunk(
+        chunk: Uint8Array<ArrayBuffer>,
+        process: WebHidEV3UpgradeProcessWrite,
+        bytes_sent: number,
+        expected_size: number,
+        chunk_size: number,
+    ): Promise<number> {
+        try {
+            const reply = await this.sendCommand(
+                SystemCommand.RECOVERY_DOWNLOAD_DATA,
+                chunk,
+            );
+            if (!reply) throw new WebHidEV3UpgradeError('No reply received');
+
+            const bytes_written = chunk_size;
+            bytes_sent += bytes_written;
+
+            process.events.emit('progress', 'write/process', bytes_sent, expected_size);
+
+            return bytes_sent;
+        } catch (error) {
+            throw new WebHidEV3UpgradeError(
+                'Error communicating with device: Command.DOWNLOAD_DATA, ' + error,
+            );
+        }
+    }
+
     public async do_write(
         process: WebHidEV3UpgradeProcessWrite,
         xfer_size: number,
         data: ArrayBuffer,
+        singleMode: boolean,
     ): Promise<void> {
         let bytes_sent = 0;
         const expected_size = data.byteLength;
         const firmwareData = new Uint8Array(data);
         const expected_checksum = mycrc32(firmwareData);
 
-        // enter download mode
-        process.events.emit('progress', 'download_with_erase/start');
-        {
-            // Erasing doesn't have any progress feedback, there is a slight delay here
-            const param_data = new Uint8Array(8);
-            const view = new DataView(param_data.buffer);
-            view.setUint32(0, 0, true); // address
-            view.setUint32(4, expected_size, true);
-            try {
-                const reply = await this.sendCommand(
-                    SystemCommand.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
-                    param_data,
-                );
+        if (singleMode) {
+            // mode: erase and download in one step
+            // enter download mode
+            process.events.emit('progress', 'download_with_erase/start');
+            {
+                // Erasing doesn't have any progress feedback, there is a slight delay here
+                const param_data = new Uint8Array(8);
+                const view = new DataView(param_data.buffer);
+                view.setUint32(0, 0, true); // address
+                view.setUint32(4, expected_size, true);
+                try {
+                    const reply = await this.sendCommand(
+                        SystemCommand.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
+                        param_data,
+                    );
 
-                if (!reply) throw new WebHidEV3UpgradeError('No reply received');
-            } catch (error) {
-                throw new WebHidEV3UpgradeError(
-                    'Error communicating with device: Command.BEGIN_DOWNLOAD_WITH_ERASE, ' +
-                        error,
-                );
+                    if (!reply) throw new WebHidEV3UpgradeError('No reply received');
+                } catch (error) {
+                    throw new WebHidEV3UpgradeError(
+                        'Error communicating with device: Command.BEGIN_DOWNLOAD_WITH_ERASE, ' +
+                            error,
+                    );
+                }
             }
+            process.events.emit('progress', 'download_with_erase/end');
+        } else {
+            // mode: separate erase and download
+            // erase chip
+            process.events.emit('progress', 'erase/start');
+            {
+                // Erasing doesn't have any progress feedback, there is very long slight delay here
+                const param_data = new Uint8Array(8);
+                const view = new DataView(param_data.buffer);
+                view.setUint32(0, 0, true); // address
+                view.setUint32(4, expected_size, true);
+                try {
+                    const reply = await this.sendCommand(
+                        SystemCommand.RECOVERY_CHIP_ERASE,
+                    );
+                    if (!reply) throw new WebHidEV3UpgradeError('No reply received');
+                } catch (error) {
+                    throw new WebHidEV3UpgradeError(
+                        'Error communicating with device: Command.RECOVERY_CHIP_ERASE, ' +
+                            error,
+                    );
+                }
+            }
+            process.events.emit('progress', 'erase/end');
+
+            // enter download mode
+            process.events.emit('progress', 'download/start');
+            {
+                // Erasing doesn't have any progress feedback, there is a slight delay here
+                const param_data = new Uint8Array(8);
+                const view = new DataView(param_data.buffer);
+                view.setUint32(0, 0, true); // address
+                view.setUint32(4, expected_size, true);
+                try {
+                    const reply = await this.sendCommand(
+                        SystemCommand.RECOVERY_BEGIN_DOWNLOAD,
+                        param_data,
+                    );
+
+                    if (!reply) throw new WebHidEV3UpgradeError('No reply received');
+                } catch (error) {
+                    throw new WebHidEV3UpgradeError(
+                        'Error communicating with device: Command.RECOVERY_BEGIN_DOWNLOAD, ' +
+                            error,
+                    );
+                }
+            }
+            process.events.emit('progress', 'download/end');
         }
-        process.events.emit('progress', 'download_with_erase/end');
 
         // download firmware
         process.events.emit('progress', 'write/start');
@@ -204,29 +287,13 @@ export class WebHidEV3Upgrader {
                     offset + chunk_size,
                 );
 
-                try {
-                    const reply = await this.sendCommand(
-                        SystemCommand.RECOVERY_DOWNLOAD_DATA,
-                        chunk,
-                    );
-                    if (!reply) throw new WebHidEV3UpgradeError('No reply received');
-
-                    const bytes_written = chunk_size;
-                    bytes_sent += bytes_written;
-
-                    process.events.emit(
-                        'progress',
-                        'write/process',
-                        bytes_sent,
-                        expected_size,
-                    );
-                } catch (error) {
-                    throw new WebHidEV3UpgradeError(
-                        'Error communicating with device: Command.DOWNLOAD_DATA, ' +
-                            error,
-                    );
-                    break;
-                }
+                bytes_sent = await this.processChunk(
+                    chunk,
+                    process,
+                    bytes_sent,
+                    expected_size,
+                    chunk_size,
+                );
             }
         }
         process.events.emit('progress', 'write/end', bytes_sent);
@@ -284,6 +351,18 @@ export class WebHidEV3Upgrader {
         } catch (error) {
             throw new WebHidEV3UpgradeError(
                 'Error communicating with device: Command.ENTER_FW_UPDATE, ' + error,
+            );
+        }
+    }
+
+    public async eraseChip() {
+        try {
+            const reply = await this.sendCommand(SystemCommand.RECOVERY_CHIP_ERASE);
+            if (!reply) throw new WebHidEV3UpgradeError('No reply received');
+        } catch (error) {
+            throw new WebHidEV3UpgradeError(
+                'Error communicating with device: Command.RECOVERY_CHIP_ERASE, ' +
+                    error,
             );
         }
     }

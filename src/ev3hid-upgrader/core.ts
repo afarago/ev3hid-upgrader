@@ -21,6 +21,7 @@ export enum ReplyStatusCode {
     ILLEGAL_CONNECTION = 0x0c,
 }
 
+// ref: https://github.com/mindboards/ev3sources/blob/master/lms2012/c_com/source/c_com.h
 export enum SystemCommand {
     BEGIN_DOWNLOAD = 0x92,
     CONTINUE_DOWNLOAD = 0x93,
@@ -36,8 +37,18 @@ export enum SystemCommand {
     LIST_OPEN_HANDLES = 0x9d,
     WRITE_MAILBOX = 0x9e,
     BLUETOOTH_PIN = 0x9f,
+    /* This command is used to force the brick into firmware update mode. The command will not
+    send any response back to the host. The filesystem will not be updated when closing
+    Linux.
+    */
     ENTER_FW_UPDATE = 0xa0,
+    /* Sets the default Bundle ID for mode 2. Default bundle ID is "com.lego.lms".
+    pppppp = null terminated ID string. Max. length = 24 chars including the null termination
+    */
     SET_BUNDLE_ID = 0xa1,
+    /* Sets the default Bundle seed ID for mode 2. Default bundle seed ID is "9RNK8ZF528".
+    pppppp = null terminated SEED ID string. Max. length = 11 chars including the null termination
+    */
     SET_BUNDLE_SEED_ID = 0xa2,
 
     RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE = 0xf0,

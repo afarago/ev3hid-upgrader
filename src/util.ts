@@ -1,11 +1,40 @@
 const logdiv = document.getElementById('log');
+// Use Shadow DOM for better performance
+if (!logdiv!.shadowRoot) {
+    const shadowRoot = logdiv!.attachShadow({ mode: 'open' });
+    const container = document.createElement('div');
+    shadowRoot.appendChild(container);
+
+    const styleElement = document.createElement('style');
+    styleElement.textContent = 'pre { margin-block: 0; }';
+    shadowRoot.appendChild(styleElement);
+}
+const container = logdiv!.shadowRoot!.querySelector('div')!;
+
+function keepLastXChildrenArray(container: HTMLDivElement, count: number) {
+    if (container.children.length > count) {
+        const children = Array.from(container.children);
+        const childCount = children.length;
+        const elementsToRemove = children.slice(0, childCount - count); // Get the elements to remove
+
+        elementsToRemove.forEach((child) => {
+            container.removeChild(child);
+        });
+    }
+}
 
 export function log(...args: any[]) {
-    //   console.log(...args);
-    const pre = document.createElement('pre');
-    pre.textContent = args.join(' ');
-    logdiv!.appendChild(pre);
-    logdiv!.scrollTop = logdiv!.scrollHeight;
+    setTimeout(() => {
+        console.log(args);
+        const pre = document.createElement('pre');
+        pre.textContent = args.join('\t');
+
+        // logdiv!.scrollTo(0, logdiv!.scrollHeight);
+        // console.log(2);
+        container.appendChild(pre);
+        keepLastXChildrenArray(container, 500);
+        logdiv!.shadowRoot!.host.scrollTop = logdiv!.shadowRoot!.host.scrollHeight;
+    }, 0);
 }
 
 const msgcount = document.getElementById('message-count');
