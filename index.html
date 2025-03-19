@@ -20,7 +20,17 @@
             <button id="enterfwupdate">Enter FW Update</button>
         </div>
         <div>message count: <span id="message-count">0</span></div>
-        <div><i>debug: chrome://device-log/?refresh=1&types=HID</i></div>
+        <div>
+            <a href="https://app.netlify.com/sites/ev3hid-upgrader/deploys"
+                ><img
+                    src="https://api.netlify.com/api/v1/badges/fb820ae5-e09c-4130-a80a-dab2300a35bb/deploy-status"
+                    alt="Deploy status badge"
+                    height="20"
+                    style="vertical-align: bottom"
+            /></a>
+            |
+            <i>debug: chrome://device-log/?refresh=1&types=HID</i>
+        </div>
         <pre id="log"></pre>
         <script type="module" src="/src/main.ts"></script>
     </body>
