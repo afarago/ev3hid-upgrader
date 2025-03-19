@@ -74,8 +74,8 @@ export type WebHidEV3UpgradeEvent = {
     message: (count: number, state: boolean) => void;
 };
 
-export type WebHidEV3UpgradeLog = Record<"info" | "warning", (msg: string) => void> & {
+export type WebHidEV3UpgradeLog = Record<'info' | 'warning', (msg: string) => void> & {
     progress: (done: number, total?: number) => void;
 };
 
-export class WebHidEV3UpgradeError extends Error { }
+export class WebHidEV3UpgradeError extends Error {}

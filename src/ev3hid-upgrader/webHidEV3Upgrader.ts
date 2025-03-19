@@ -1,7 +1,13 @@
-import { createNanoEvents } from "nanoevents";
-import { MessageType, SystemCommand, WebHidEV3UpgradeError, WebHidEV3UpgradeEvent, WebHidEV3UpgradeLog } from "./core";
-import { mycrc32 } from "./crc32";
-import { WebHidEV3UpgradeProcessWrite } from "./process";
+import { createNanoEvents } from 'nanoevents';
+import {
+    MessageType,
+    SystemCommand,
+    WebHidEV3UpgradeError,
+    WebHidEV3UpgradeEvent,
+    WebHidEV3UpgradeLog,
+} from './core';
+import { mycrc32 } from './crc32';
+import { WebHidEV3UpgradeProcessWrite } from './process';
 
 const MAX_DATA_SIZE: number = 1018;
 const UPGRADE_REPORT_ID: number = 0x00;
@@ -10,30 +16,31 @@ export class WebHidEV3Upgrader {
     events = createNanoEvents<WebHidEV3UpgradeEvent>();
     private msgCount: number = 0;
 
-    constructor(public readonly device: HIDDevice,
-        private readonly log: WebHidEV3UpgradeLog
+    constructor(
+        public readonly device: HIDDevice,
+        private readonly log: WebHidEV3UpgradeLog,
     ) {
         this.device = device;
     }
 
     public async init(): Promise<void> {
-        this.events.emit("init");
+        this.events.emit('init');
     }
 
     public async connect(): Promise<void> {
         try {
             await this.device.open();
         } catch (error) {
-            this.events.emit("disconnect", error as Error);
+            this.events.emit('disconnect', error as Error);
             throw error;
         }
 
-        this.events.emit("connect");
+        this.events.emit('connect');
     }
 
     async close() {
         await this.device.close();
-        this.events.emit("disconnect");
+        this.events.emit('disconnect');
     }
 
     private nextMsgCount(): number {
@@ -43,13 +50,13 @@ export class WebHidEV3Upgrader {
     private async sendCommand(
         command: SystemCommand,
         payload?: Uint8Array,
-        waitForReply: boolean = true
+        waitForReply: boolean = true,
     ): Promise<Uint8Array | undefined> {
         let length = 4;
 
         if (payload) {
             if (payload.length > MAX_DATA_SIZE) {
-                throw new WebHidEV3UpgradeError("Payload is too large");
+                throw new WebHidEV3UpgradeError('Payload is too large');
             }
             length += payload.length;
         }
@@ -70,9 +77,9 @@ export class WebHidEV3Upgrader {
         }
 
         const replypromise = waitForReply ? this.waitForInputReport(this.device) : null;
-        this.events.emit("message", this.msgCount, false);
+        this.events.emit('message', this.msgCount, false);
         await this.device.sendReport(UPGRADE_REPORT_ID, messageBuffer);
-        this.events.emit("message", this.msgCount, true);
+        this.events.emit('message', this.msgCount, true);
 
         if (waitForReply && replypromise) {
             const reply = await replypromise.then((event) => {
@@ -90,7 +97,9 @@ export class WebHidEV3Upgrader {
 
             const replyCmd = reply[5];
             if (replyCmd !== command) {
-                throw new WebHidEV3UpgradeError(`command mismatch: ${replyCmd} != ${command}`);
+                throw new WebHidEV3UpgradeError(
+                    `command mismatch: ${replyCmd} != ${command}`,
+                );
             }
 
             return reply;
@@ -100,17 +109,17 @@ export class WebHidEV3Upgrader {
     private waitForInputReport(device: HIDDevice): Promise<HIDInputReportEvent> {
         return new Promise((resolve) => {
             const handler = (event: HIDInputReportEvent) => {
-                device.removeEventListener("inputreport", handler);
+                device.removeEventListener('inputreport', handler);
                 resolve(event);
             };
-            device.addEventListener("inputreport", handler);
+            device.addEventListener('inputreport', handler);
         });
     }
 
     public async getVersion(): Promise<number> {
-        this.log.info("Getting version...");
+        this.log.info('Getting version...');
         const reply = await this.sendCommand(SystemCommand.RECOVERY_GET_VERSION);
-        if (!reply) throw new WebHidEV3UpgradeError("No reply received");
+        if (!reply) throw new WebHidEV3UpgradeError('No reply received');
 
         // byte 6-7 contains hw id in big endian
         // byte 8-9 contains fw id in big endian
@@ -124,7 +133,7 @@ export class WebHidEV3Upgrader {
 
     write(data: ArrayBuffer): WebHidEV3UpgradeProcessWrite {
         if (!this) {
-            throw new WebHidEV3UpgradeError("Required initialized driver");
+            throw new WebHidEV3UpgradeError('Required initialized driver');
         }
 
         let process = new WebHidEV3UpgradeProcessWrite();
@@ -133,27 +142,33 @@ export class WebHidEV3Upgrader {
             try {
                 let result: Promise<void>;
 
-                process.events.emit("start");
+                process.events.emit('start');
 
                 result = this.do_write(process, MAX_DATA_SIZE, data);
 
-                result.then(() => process.events.emit("end")).catch((error) => process.events.emit("error", error));
+                result
+                    .then(() => process.events.emit('end'))
+                    .catch((error) => process.events.emit('error', error));
             } catch (error) {
-                process.events.on("error", error as any);
+                process.events.on('error', error as any);
             }
         }, 0);
 
         return process;
     }
 
-    public async do_write(process: WebHidEV3UpgradeProcessWrite, xfer_size: number, data: ArrayBuffer): Promise<void> {
+    public async do_write(
+        process: WebHidEV3UpgradeProcessWrite,
+        xfer_size: number,
+        data: ArrayBuffer,
+    ): Promise<void> {
         let bytes_sent = 0;
         const expected_size = data.byteLength;
         const firmwareData = new Uint8Array(data);
         const expected_checksum = mycrc32(firmwareData);
 
         // enter download mode
-        process.events.emit("progress", "download_with_erase/start");
+        process.events.emit('progress', 'download_with_erase/start');
         {
             // Erasing doesn't have any progress feedback, there is a slight delay here
             const param_data = new Uint8Array(8);
@@ -163,22 +178,22 @@ export class WebHidEV3Upgrader {
             try {
                 const reply = await this.sendCommand(
                     SystemCommand.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
-                    param_data
+                    param_data,
                 );
 
-                if (!reply) throw new WebHidEV3UpgradeError("No reply received");
+                if (!reply) throw new WebHidEV3UpgradeError('No reply received');
             } catch (error) {
                 throw new WebHidEV3UpgradeError(
-                    "Error communicating with device: Command.BEGIN_DOWNLOAD_WITH_ERASE, " +
-                    error
+                    'Error communicating with device: Command.BEGIN_DOWNLOAD_WITH_ERASE, ' +
+                        error,
                 );
             }
         }
-        process.events.emit("progress", "download_with_erase/end");
+        process.events.emit('progress', 'download_with_erase/end');
 
         // download firmware
-        process.events.emit("progress", "write/start");
-        process.events.emit("progress", "write/process", bytes_sent, expected_size);
+        process.events.emit('progress', 'write/start');
+        process.events.emit('progress', 'write/process', bytes_sent, expected_size);
         {
             for (let offset = 0; offset < expected_size; offset += xfer_size) {
                 const bytes_left = expected_size - offset;
@@ -186,30 +201,38 @@ export class WebHidEV3Upgrader {
                 const chunk = firmwareData.slice(
                     offset,
                     //Math.min(offset + chuksize, expected_size)
-                    offset + chunk_size
+                    offset + chunk_size,
                 );
 
                 try {
                     const reply = await this.sendCommand(
                         SystemCommand.RECOVERY_DOWNLOAD_DATA,
-                        chunk
+                        chunk,
                     );
-                    if (!reply) throw new WebHidEV3UpgradeError("No reply received");
+                    if (!reply) throw new WebHidEV3UpgradeError('No reply received');
 
                     const bytes_written = chunk_size;
                     bytes_sent += bytes_written;
 
-                    process.events.emit("progress", "write/process", bytes_sent, expected_size);
+                    process.events.emit(
+                        'progress',
+                        'write/process',
+                        bytes_sent,
+                        expected_size,
+                    );
                 } catch (error) {
-                    throw new WebHidEV3UpgradeError("Error communicating with device: Command.DOWNLOAD_DATA, " + error);
+                    throw new WebHidEV3UpgradeError(
+                        'Error communicating with device: Command.DOWNLOAD_DATA, ' +
+                            error,
+                    );
                     break;
                 }
             }
         }
-        process.events.emit("progress", "write/end", bytes_sent);
+        process.events.emit('progress', 'write/end', bytes_sent);
 
         // verify checksum
-        process.events.emit("progress", "verify/start");
+        process.events.emit('progress', 'verify/start');
         {
             const param_data = new Uint8Array(8);
             const view = new DataView(param_data.buffer);
@@ -221,45 +244,47 @@ export class WebHidEV3Upgrader {
             try {
                 const reply = await this.sendCommand(
                     SystemCommand.RECOVERY_GET_CHECKSUM,
-                    param_data
+                    param_data,
                 );
-                if (!reply) throw new WebHidEV3UpgradeError("No reply received");
+                if (!reply) throw new WebHidEV3UpgradeError('No reply received');
 
                 checksum = new DataView(reply.buffer).getUint32(6, true);
             } catch (error) {
-                throw new WebHidEV3UpgradeError("Error communicating with device: Command.GET_CHECKSUM, " + error);
+                throw new WebHidEV3UpgradeError(
+                    'Error communicating with device: Command.GET_CHECKSUM, ' + error,
+                );
             }
 
             // if (expected_checksum !== checksum) {
             //     throw new WebHidEV3UpgradeError(`Checksum mismatch: ${expected_checksum}, ${checksum}`);
             // }
         }
-        process.events.emit("progress", "verify/end");
+        process.events.emit('progress', 'verify/end');
 
         // restarting device
-        process.events.emit("progress", "restart/start");
+        process.events.emit('progress', 'restart/start');
         {
             try {
                 const reply = await this.sendCommand(SystemCommand.RECOVERY_START_APP);
-                if (!reply) throw new WebHidEV3UpgradeError("No reply received");
+                if (!reply) throw new WebHidEV3UpgradeError('No reply received');
             } catch (error) {
                 throw new WebHidEV3UpgradeError(
-                    "Error communicating with device: Command.RECOVERY_START_APP, " +
-                    error
+                    'Error communicating with device: Command.RECOVERY_START_APP, ' +
+                        error,
                 );
             }
         }
-        process.events.emit("progress", "restart/end");
+        process.events.emit('progress', 'restart/end');
     }
 
     public async enterFirmwareUpdateMode() {
         try {
-            const reply = await this.sendCommand(
-                SystemCommand.ENTER_FW_UPDATE
-            );
-            if (!reply) throw new WebHidEV3UpgradeError("No reply received");
+            const reply = await this.sendCommand(SystemCommand.ENTER_FW_UPDATE);
+            if (!reply) throw new WebHidEV3UpgradeError('No reply received');
         } catch (error) {
-            throw new WebHidEV3UpgradeError("Error communicating with device: Command.ENTER_FW_UPDATE, " + error);
+            throw new WebHidEV3UpgradeError(
+                'Error communicating with device: Command.ENTER_FW_UPDATE, ' + error,
+            );
         }
     }
 }
