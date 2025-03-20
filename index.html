@@ -6,36 +6,43 @@
     </head>
 
     <body>
-        <h1>EV3 HID test over WebHID</h1>
         <div>
-            <button id="connect">Connect</button>
-            <button id="disconnect">Disconnect</button>
-            <button id="forget">Forget</button>
+            <h1>EV3 HID test over WebHID</h1>
+            <div>
+                <button id="connect">Connect</button>
+                <button id="disconnect">Disconnect</button>
+                <button id="forget">Forget</button>
+                message count: <span id="message-count">0</span>
+                <br />
+                <i>debug: chrome://device-log/?refresh=1&types=HID</i> |
+                <a href="https://app.netlify.com/sites/ev3hid-upgrader/deploys"
+                    ><img
+                        src="https://api.netlify.com/api/v1/badges/fb820ae5-e09c-4130-a80a-dab2300a35bb/deploy-status"
+                        alt="Deploy status badge"
+                        height="20"
+                        style="vertical-align: bottom"
+                /></a>
+            </div>
+            <hr />
+            <div>
+                in EV3 FW update mode:
+                <button id="getversion">Get HW version</button>
+                <button id="erase">Erase chip</button>
+                <br />
+                <button id="updatefw-pybricks">Update to Pybricks</button>
+                <button id="updatefw-ev3g110e">Update to EV3 1.10E</button>
+                <button id="updatefw-ev3g109e">Update to EV3 1.09E</button>
+                <button id="updatefw-ev3g109h">Update to EV3 1.09H</button>
+                <button id="updatefw-ev3g109d">Update to EV3 1.09D</button>
+            </div>
+            <hr />
+            <div>
+                in EV3 regular mode:
+                <button id="enterfwupdate">Enter FW Update</button>
+            </div>
+            <hr />
+            <div id="log"></div>
         </div>
-        <div>
-            in EV3 FW update mode:
-            <button id="getversion">Get HW version</button>
-            <button id="updatefw-pybricks">Update to Pybricks</button>
-            <button id="updatefw-ev3g">Update to EV3 1.10E</button>
-            <button id="erase">Erase chip</button>
-        </div>
-        <div>
-            in EV3 regular mode:
-            <button id="enterfwupdate">Enter FW Update</button>
-        </div>
-        <div>message count: <span id="message-count">0</span></div>
-        <div>
-            <a href="https://app.netlify.com/sites/ev3hid-upgrader/deploys"
-                ><img
-                    src="https://api.netlify.com/api/v1/badges/fb820ae5-e09c-4130-a80a-dab2300a35bb/deploy-status"
-                    alt="Deploy status badge"
-                    height="20"
-                    style="vertical-align: bottom"
-            /></a>
-            |
-            <i>debug: chrome://device-log/?refresh=1&types=HID</i>
-        </div>
-        <div id="log"></div>
         <script type="module" src="/src/main.ts"></script>
     </body>
 </html>

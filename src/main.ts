@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { HIDDeviceFilter, HIDDeviceRequestOptions } from './ev3hid-upgrader/core';
+import type { HIDDeviceFilter } from './ev3hid-upgrader/core';
 import { WebHidEV3Upgrader } from './ev3hid-upgrader/webHidEV3Upgrader';
 import { hex16, log, updateMsgCount } from './util';
 
@@ -53,7 +53,7 @@ async function open(device: HIDDevice) {
     // webdfu.events.on("disconnect", onDisconnect);
 
     upgrader.events.on('message', (count: number, state: boolean) => {
-        updateMsgCount(count, state);
+        setTimeout(() => updateMsgCount(count, state), 0);
     });
 
     await upgrader.init();
@@ -130,9 +130,24 @@ document
         handleUpdateFirmware('firmware/firmware/firmware-base.bin'),
     );
 document
-    .getElementById('updatefw-ev3g')
+    .getElementById('updatefw-ev3g110e')
     ?.addEventListener('click', () =>
         handleUpdateFirmware('firmware/LME-EV3_Firmware_1.10E.bin'),
+    );
+document
+    .getElementById('updatefw-ev3g109e')
+    ?.addEventListener('click', () =>
+        handleUpdateFirmware('firmware/LME-EV3_Firmware_1.09E.bin'),
+    );
+document
+    .getElementById('updatefw-ev3g109h')
+    ?.addEventListener('click', () =>
+        handleUpdateFirmware('firmware/LME-EV3_Firmware_1.09H.bin'),
+    );
+document
+    .getElementById('updatefw-ev3g109d')
+    ?.addEventListener('click', () =>
+        handleUpdateFirmware('firmware/LME-EV3_Firmware_1.09D.bin'),
     );
 document.getElementById('disconnect')?.addEventListener('click', handleDisconnect);
 document.getElementById('forget')?.addEventListener('click', handleForget);
@@ -141,15 +156,8 @@ document
     .getElementById('enterfwupdate')
     ?.addEventListener('click', handleEnterFirmwareMode);
 
-window.onload = async () => {
-    // Register for connection and disconnection events.
-    // navigator.hid.onconnect = (e) => {
-    //   addDevice(e.device);
-    // };
-    // navigator.hid.ondisconnect = (e) => {
-    //   removeDevice(e.device);
-    // };
-
+async function attemptAutoConnect() {
+    if (upgrader) return;
     // Fetch the list of connected devices.
     const devices = await navigator.hid.getDevices();
     if (devices.length > 0) {
@@ -157,5 +165,21 @@ window.onload = async () => {
         const device = devices[0];
         await open(device);
     }
-    // for (let device of devices) await addDevice(device);
+}
+
+window.onload = async () => {
+    // Register for connection and disconnection events.
+    // navigator.hid.onconnect = (e) => {
+    //   addDevice(e.device);
+    // };
+    navigator.hid.ondisconnect = (ev: Event) => {
+        const evc = ev as HIDConnectionEvent;
+        if (evc.device === upgrader?.device) {
+            handleDisconnect();
+        }
+    };
+
+    attemptAutoConnect();
 };
+
+setInterval(attemptAutoConnect, 1000);
