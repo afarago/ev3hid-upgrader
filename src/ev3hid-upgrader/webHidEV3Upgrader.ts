@@ -10,7 +10,8 @@ import {
 import { mycrc32 } from './crc32';
 import { WebHidEV3UpgradeProcessWrite } from './process';
 
-const MAX_DATA_SIZE: number = 1018;
+const sectorSize = 64 * 1024; // flash memory sector size
+const maxPayloadSize = 1018; // maximum payload size for EV3 commands
 const UPGRADE_REPORT_ID: number = 0x00;
 
 export class WebHidEV3Upgrader {
@@ -56,7 +57,7 @@ export class WebHidEV3Upgrader {
         let length = 4;
 
         if (payload) {
-            if (payload.length > MAX_DATA_SIZE) {
+            if (payload.length > maxPayloadSize) {
                 throw new WebHidEV3UpgradeError('Payload is too large');
             }
             length += payload.length;
@@ -149,7 +150,7 @@ export class WebHidEV3Upgrader {
 
                 process.events.emit('start');
 
-                result = this.do_write(process, MAX_DATA_SIZE, data, singleMode);
+                result = this.do_write(process, data, singleMode);
 
                 result
                     .then(() => process.events.emit('end'))
@@ -191,7 +192,6 @@ export class WebHidEV3Upgrader {
 
     public async do_write(
         process: WebHidEV3UpgradeProcessWrite,
-        xfer_size: number,
         data: ArrayBuffer,
         singleMode: boolean,
     ): Promise<void> {
@@ -199,32 +199,35 @@ export class WebHidEV3Upgrader {
         const expected_size = data.byteLength;
         const firmwareData = new Uint8Array(data);
         const expected_checksum = mycrc32(firmwareData);
+        const singleBatchedMode = true;
 
         if (singleMode) {
-            // mode: erase and download in one step
-            // enter download mode
-            process.events.emit('progress', 'download_with_erase/start');
-            {
-                // Erasing doesn't have any progress feedback, there is a slight delay here
-                const param_data = new Uint8Array(8);
-                const view = new DataView(param_data.buffer);
-                view.setUint32(0, 0, true); // address
-                view.setUint32(4, expected_size, true);
-                try {
-                    const reply = await this.sendCommand(
-                        SystemCommand.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
-                        param_data,
-                    );
-
-                    if (!reply) throw new WebHidEV3UpgradeError('No reply received');
-                } catch (error) {
-                    throw new WebHidEV3UpgradeError(
-                        'Error communicating with device: Command.BEGIN_DOWNLOAD_WITH_ERASE, ' +
-                            error,
-                    );
+            // mode: erase and download in one step, enter download mode
+            if (!singleBatchedMode) {
+                process.events.emit('progress', 'download_with_erase/start');
+                {
+                    // Erasing doesn't have any progress feedback, there is a slight delay here
+                    const param_data = new Uint8Array(8);
+                    const view = new DataView(param_data.buffer);
+                    view.setUint32(0, 0, true); // address
+                    view.setUint32(4, expected_size, true);
+                    try {
+                        const reply = await this.sendCommand(
+                            SystemCommand.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
+                            param_data,
+                        );
+                        if (!reply)
+                            throw new WebHidEV3UpgradeError('No reply received');
+                    } catch (error) {
+                        throw new WebHidEV3UpgradeError(
+                            'Error communicating with device: Command.BEGIN_DOWNLOAD_WITH_ERASE, ' +
+                                error,
+                        );
+                    }
                 }
+                process.events.emit('progress', 'download_with_erase/end');
             }
-            process.events.emit('progress', 'download_with_erase/end');
+            // NOTE: single mode can be done sector-by-sector, it will perform faster
         } else {
             // mode: separate erase and download
             // erase chip
@@ -248,7 +251,6 @@ export class WebHidEV3Upgrader {
                 }
             }
             process.events.emit('progress', 'erase/end');
-
             // enter download mode
             process.events.emit('progress', 'download/start');
             {
@@ -262,7 +264,6 @@ export class WebHidEV3Upgrader {
                         SystemCommand.RECOVERY_BEGIN_DOWNLOAD,
                         param_data,
                     );
-
                     if (!reply) throw new WebHidEV3UpgradeError('No reply received');
                 } catch (error) {
                     throw new WebHidEV3UpgradeError(
@@ -278,22 +279,60 @@ export class WebHidEV3Upgrader {
         process.events.emit('progress', 'write/start');
         process.events.emit('progress', 'write/process', bytes_sent, expected_size);
         {
-            for (let offset = 0; offset < expected_size; offset += xfer_size) {
-                const bytes_left = expected_size - offset;
-                const chunk_size = Math.min(bytes_left, xfer_size);
-                const chunk = firmwareData.slice(
-                    offset,
-                    //Math.min(offset + chuksize, expected_size)
-                    offset + chunk_size,
-                );
+            let offset = 0;
 
-                bytes_sent = await this.processChunk(
-                    chunk,
-                    process,
-                    bytes_sent,
-                    expected_size,
-                    chunk_size,
-                );
+            // single mode can be done sector by sector
+            // non-single mode is done in one go
+            const batchSize =
+                singleMode && singleBatchedMode ? sectorSize : expected_size;
+
+            for (let i = 0; i < expected_size; i += batchSize) {
+                const sectorData = firmwareData.slice(i, i + batchSize);
+
+                if (singleMode && singleBatchedMode) {
+                    // send header for each sector if single mode
+                    process.events.emit('progress', 'download_with_erase/start');
+                    {
+                        const param_data = new Uint8Array(8);
+                        const view = new DataView(param_data.buffer);
+                        view.setUint32(0, i, true);
+                        view.setUint32(4, batchSize, true);
+                        try {
+                            const reply = await this.sendCommand(
+                                SystemCommand.RECOVERY_BEGIN_DOWNLOAD_WITH_ERASE,
+                                param_data,
+                            );
+                            if (!reply)
+                                throw new WebHidEV3UpgradeError('No reply received');
+                        } catch (error) {
+                            throw new WebHidEV3UpgradeError(
+                                'Error communicating with device: Command.BEGIN_DOWNLOAD_WITH_ERASE, ' +
+                                    error,
+                            );
+                        }
+                    }
+                    process.events.emit('progress', 'download_with_erase/end');
+                } else {
+                    // Nothing to do for non single mode or non batched mode
+                }
+
+                // send sector data in chunks
+                for (let j = 0; j < sectorData.byteLength; j += maxPayloadSize) {
+                    const payload = sectorData.slice(j, j + maxPayloadSize);
+
+                    offset = i + j;
+                    const bytes_left = expected_size - offset;
+                    const chunk_size = Math.min(bytes_left, maxPayloadSize);
+                    const chunk = sectorData.slice(j, j + maxPayloadSize);
+
+                    bytes_sent = await this.processChunk(
+                        chunk,
+                        process,
+                        bytes_sent,
+                        expected_size,
+                        chunk_size,
+                    );
+                }
             }
         }
         process.events.emit('progress', 'write/end', bytes_sent);

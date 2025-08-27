@@ -96,7 +96,7 @@ async function handleUpdateFirmware(filename: string) {
             time2 - time,
             state,
             expectedSize ? `${bytesSent}/${expectedSize}` : '',
-            elapsed2,
+            `${elapsed2} ms`,
         );
     });
 }
