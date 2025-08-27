@@ -22,7 +22,6 @@ export class WebHidEV3Upgrader {
         public readonly device: HIDDevice,
         private readonly log: WebHidEV3UpgradeLog,
     ) {
-        this.device = device;
     }
 
     public async init(): Promise<void> {
@@ -156,7 +155,7 @@ export class WebHidEV3Upgrader {
                     .then(() => process.events.emit('end'))
                     .catch((error) => process.events.emit('error', error));
             } catch (error) {
-                process.events.on('error', error as any);
+                process.events.emit('error', error as any); // Fixed typo: emit instead of on
             }
         }, 0);
 
@@ -164,7 +163,7 @@ export class WebHidEV3Upgrader {
     }
 
     private async processChunk(
-        chunk: Uint8Array<ArrayBuffer>,
+        chunk: Uint8Array, // Fixed type
         process: WebHidEV3UpgradeProcessWrite,
         bytes_sent: number,
         expected_size: number,
@@ -279,8 +278,6 @@ export class WebHidEV3Upgrader {
         process.events.emit('progress', 'write/start');
         process.events.emit('progress', 'write/process', bytes_sent, expected_size);
         {
-            let offset = 0;
-
             // single mode can be done sector by sector
             // non-single mode is done in one go
             const batchSize =
@@ -320,8 +317,8 @@ export class WebHidEV3Upgrader {
                 for (let j = 0; j < sectorData.byteLength; j += maxPayloadSize) {
                     const payload = sectorData.slice(j, j + maxPayloadSize);
 
-                    offset = i + j;
-                    const bytes_left = expected_size - offset;
+                    // Removed unused offset variable
+                    const bytes_left = expected_size - (i + j);
                     const chunk_size = Math.min(bytes_left, maxPayloadSize);
                     const chunk = sectorData.slice(j, j + maxPayloadSize);
 
